@@ -1,23 +1,36 @@
+
 #include <Wire.h>
 #include <DS3231.h>
-#include <Servo.h>
 
-// สร้างอ็อบเจ็กต์สำหรับ RTC และเซอร์โวมอเตอร์
-DS3231 rtc;
-Servo myServo;
+DS3231 rtc; // RTC Module
 
-const int servoPin = 11;                                // ใช้ขา D11 สำหรับเซอร์โวมอเตอร์
-int alarmSchedule[][2] = {{10, 10}, {11, 50}, {15, 10}}; // ตั้งเวลาปลุก 
+// กำหนดพินสำหรับ LED, Buzzer และปุ่ม Reset
+const int ledPins[] = {2, 3, 4, 5, 6, 7, 8, 9, 10}; // เปลี่ยนพินตามที่คุณใช้
+const int buzzerPin = 13;
+const int resetButtonPin = 12;
+
+unsigned long resetTime = 10000; // 15 นาที (900,000 มิลลิวินาที)
+unsigned long lastEventTime = 0;
+bool resetPending = false;
 
 void setup()
 {
    Serial.begin(115200);
+   // ตรวจสอบการเชื่อมต่อ RTC
+   //  if (!rtc.begin()) {
+   //    Serial.println("ไม่สามารถเชื่อมต่อกับ RTC ได้");
+   //    while (1);
+   //  }
 
-   myServo.attach(servoPin); // กำหนดขาเซอร์โวมอเตอร์เป็น D11
-   Wire.begin();             // เริ่มต้นการใช้งาน I2C
+   // ตั้งค่าเวลาปัจจุบันใน RTC
+   //  rtc.adjust(DateTime(F(_DATE_), F(_TIME_)));
 
-   Serial.println("RTC Initialized");
-   Serial.println("พิมพ์ 'H' เพื่อดูคำสั่งทั้งหมด");
+   // ตั้งค่าพิน
+   resetAll();
+   pinMode(buzzerPin, OUTPUT);
+   pinMode(resetButtonPin, INPUT_PULLUP);
+
+   Serial.println("เริ่มต้นระบบเสร็จสิ้น");
 }
 
 void loop()
@@ -26,7 +39,7 @@ void loop()
    if (Serial.available())
    {
       char input = Serial.read();
-      if (input == 'help' || input == 'H' || input == 'h')
+      if (input == 'H' || input == 'h')
       {
          Serial.println("พิมพ์ 'H' เพื่อดูคำสั่งทั้งหมด.");
          Serial.println("พิมพ์ 'T' เพื่อตั้งเวลาใหม่.");
@@ -45,7 +58,6 @@ void loop()
    int hour = getHour();
    int minute = getMinute();
    int second = getSecond();
-
    // แสดงเวลาใน Serial Monitor
    Serial.print("Current Time: ");
    Serial.print(hour);
@@ -53,20 +65,40 @@ void loop()
    Serial.print(minute);
    Serial.print(":");
    Serial.println(second);
-
-   int alarmCount = sizeof(alarmSchedule) / sizeof(alarmSchedule[0]); // นับจำนวนการตั้งเวลาปลุก
-   for (int i = 0; i < alarmCount; i++)
+   // ตรวจสอบเวลาและทำงานตามตารางที่กำหนด
+   if (resetPending)
    {
-      if (hour == alarmSchedule[i][0] && minute == alarmSchedule[i][1])
+      if (hour == 19 && minute == 34)
       {
-         // หมุนเซอร์โวมอเตอร์ไป 90 องศา
-         myServo.write(90);
-         delay(500);
-
-         // หมุนกลับไปที่ 0 องศา
-         myServo.write(0);
-         delay(500);
+         startCycle(0);
       }
+   }
+   //  else if (hour == 8 && minute == 0) {
+   //    startCycle(1);
+   //  } else if (hour == 12 && minute == 0) {
+   //    startCycle(2);
+   //  } else if (hour == 12 && minute == 30) {
+   //    startCycle(3);
+   //  } else if (hour == 16 && minute == 0) {
+   //    startCycle(4);
+   //  } else if (hour == 16 && minute == 30) {
+   //    startCycle(5);
+   //  } else if (hour == 20 && minute == 0) {
+   //    startCycle(6);
+   //  }
+
+   // ตรวจสอบการรีเซ็ตอัตโนมัติ
+   if (resetPending && (millis() - lastEventTime) >= resetTime)
+   {
+      resetAll();
+      resetPending = false;
+   }
+
+   // ตรวจสอบการกดปุ่มรีเซ็ต
+   if (digitalRead(resetButtonPin) == LOW)
+   {
+      resetAll();
+      resetPending = false;
    }
 
    // รอจนกว่าวินาทีจะเปลี่ยน
@@ -74,6 +106,60 @@ void loop()
    {
       delay(0);
    }
+}
+
+void startCycle(int cycle)
+{
+   resetAll(); // ปิดอุปกรณ์ทั้งหมดก่อนเริ่มรอบใหม่
+   lastEventTime = millis();
+   resetPending = true;
+
+   // กำหนดการทำงานของ LED และ Buzzer ตามแต่ละรอบ
+   switch (cycle)
+   {
+   case 0:
+      digitalWrite(ledPins[0], HIGH);
+      digitalWrite(buzzerPin, HIGH);
+      break;
+   case 1:
+      digitalWrite(ledPins[1], HIGH);
+      digitalWrite(ledPins[2], HIGH);
+      digitalWrite(buzzerPin, HIGH);
+      break;
+   case 2:
+      digitalWrite(ledPins[0], HIGH);
+      digitalWrite(buzzerPin, HIGH);
+      break;
+   case 3:
+      digitalWrite(ledPins[4], HIGH);
+      digitalWrite(ledPins[7], HIGH);
+      digitalWrite(buzzerPin, HIGH);
+      break;
+   case 4:
+      digitalWrite(ledPins[0], HIGH);
+      digitalWrite(buzzerPin, HIGH);
+      break;
+   case 5:
+      digitalWrite(ledPins[1], HIGH);
+      digitalWrite(ledPins[3], HIGH);
+      digitalWrite(ledPins[5], HIGH);
+      digitalWrite(buzzerPin, HIGH);
+      break;
+   case 6:
+      digitalWrite(ledPins[2], HIGH);
+      digitalWrite(buzzerPin, HIGH);
+      break;
+   }
+}
+
+void resetAll()
+{
+   // ปิดการทำงานของ LED และ Buzzer ทั้งหมด
+   for (int i = 0; i < 9; i++)
+   {
+      digitalWrite(ledPins[i], LOW);
+   }
+   digitalWrite(buzzerPin, LOW);
 }
 
 int getHour()
