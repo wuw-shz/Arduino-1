@@ -13,21 +13,17 @@ Task playMelodyTask(0, TASK_FOREVER, &playMelodyCallback);
 #define NOTE_E5 659
 #define NOTE_G5 784
 
-int melody[] = {
-    NOTE_C5, NOTE_E5, NOTE_G5, NOTE_C5};
+int melody[] = {NOTE_C5, NOTE_E5, NOTE_G5, NOTE_C5};
+int noteDurations[] = {8, 8, 8, 4};
 
 const int ledPins[] = {2, 3, 4, 5, 6, 7, 8, 9, 10};
 const int buzzerPin = 13;
 const int resetButtonPin = 12;
-int noteDurations[] = {
-    8, 8, 8, 4};
-int resetTime = 60000; // 1 นาที
+unsigned long resetTime = 60000; // 1 นาที
 unsigned long lastEventTime = 0;
-bool isButtonPressed = false;
 bool isAlarming = false;
 unsigned long previousNoteTime = 0;
 int currentNote = 0;
-bool isPlayingMelody = false;
 
 void setup()
 {
@@ -43,78 +39,14 @@ void setup()
 
 void loop()
 {
-    if (Serial.available())
-    {
-        char input = Serial.read();
-        if (input == 'H' || input == 'h')
-        {
-            Serial.println("พิมพ์ 'H' เพื่อดูคำสั่งทั้งหมด.");
-            Serial.println("พิมพ์ 'T' เพื่อตั้งเวลาใหม่.");
-        }
-        else if (input == 'T' || input == 't')
-        {
-            setTime();
-        }
-    }
+    // เช็คสถานะเวลา
+    checkScheduledTasks();
 
-    int hour = getHour();
-    int minute = getMinute();
-    int second = getSecond();
+    // รีเซ็ตอัตโนมัติ
+    autoReset();
 
-    // Serial.print("Current Time: ");
-    // Serial.print(hour);
-    // Serial.print(":");
-    // Serial.print(minute);
-    // Serial.print(":");
-    // Serial.println(second);
-    // if (second == 0)
-    // {
-    if (hour == 21 && minute == 19)
-    {
-        startCycle(0);
-    }
-    else if (hour == 14 && minute == 15)
-    {
-        startCycle(1);
-    }
-    else if (hour == 14 && minute == 30)
-    {
-        startCycle(2);
-    }
-    else if (hour == 14 && minute == 45)
-    {
-        startCycle(3);
-    }
-    else if (hour == 15 && minute == 0)
-    {
-        startCycle(4);
-    }
-    else if (hour == 15 && minute == 15)
-    {
-        startCycle(5);
-    }
-    else if (hour == 15 && minute == 30)
-    {
-        startCycle(6);
-    }
-    // }
-    if ((millis() - lastEventTime) >= resetTime)
-    {
-        resetAll();
-        Serial.println("Time Auto Reset.");
-    }
-
-    bool buttonState = digitalRead(resetButtonPin);
-    if (buttonState == LOW && !isButtonPressed)
-    {
-        resetAll();
-        isButtonPressed = true;
-        Serial.println("Button Reset.");
-    }
-    else if (buttonState == HIGH && isButtonPressed)
-    {
-        isButtonPressed = false;
-    }
+    // เช็คปุ่มรีเซ็ต
+    handleResetButton();
 
     ts.execute();
 }
@@ -127,8 +59,8 @@ void resetAll()
         digitalWrite(ledPins[i], LOW);
     }
     digitalWrite(buzzerPin, LOW);
-    digitalWrite(ledPins[8], LOW);
     playMelodyTask.disable();
+    Serial.println("ระบบรีเซ็ตทั้งหมดแล้ว");
 }
 
 void startCycle(int cycle)
@@ -138,6 +70,8 @@ void startCycle(int cycle)
     isAlarming = true;
 
     playMelodyTask.enable();
+    Serial.print("เริ่ม Cycle: ");
+    Serial.println(cycle);
 
     switch (cycle)
     {
@@ -167,13 +101,58 @@ void startCycle(int cycle)
         digitalWrite(ledPins[2], HIGH);
         break;
     }
-    digitalWrite(ledPins[8], HIGH);
+    digitalWrite(ledPins[8], HIGH); // LED 9
+}
+
+void checkScheduledTasks()
+{
+    struct Task
+    {
+        int hour;
+        int minute;
+        int cycle;
+    };
+    Task tasks[] = {
+        {21, 19, 0},
+        {14, 15, 1},
+        {14, 30, 2},
+        {14, 45, 3},
+        {15, 0, 4},
+        {15, 15, 5},
+        {15, 30, 6}};
+    for (auto &task : tasks)
+    {
+        if (getHour() == task.hour && getMinute() == task.minute && getSecond() == 0)
+        {
+            startCycle(task.cycle);
+            break;
+        }
+    }
+}
+
+void autoReset()
+{
+    if (isAlarming && (millis() - lastEventTime >= resetTime))
+    {
+        resetAll();
+        Serial.println("ระบบรีเซ็ตอัตโนมัติเนื่องจากครบเวลา");
+    }
+}
+
+void handleResetButton()
+{
+    bool buttonState = digitalRead(resetButtonPin);
+    if (buttonState == LOW)
+    {
+        resetAll();
+        Serial.println("ปุ่มรีเซ็ตถูกกด");
+        delay(200); // กันการกดซ้ำ
+    }
 }
 
 int getHour()
 {
-    bool h12 = false;
-    bool pm = false;
+    bool h12 = false, pm = false;
     return rtc.getHour(h12, pm);
 }
 
@@ -187,99 +166,18 @@ int getSecond()
     return rtc.getSecond();
 }
 
-void setTime()
-{
-    Serial.println("---------- Set Time ----------");
-
-    int hour = getHour(), minute = getMinute(), second = getSecond();
-
-    while (Serial.available())
-    {
-        Serial.read();
-    }
-
-    auto getInput = [](const char *prompt, int minVal, int maxVal)
-    {
-        while (true)
-        {
-            Serial.println(prompt);
-
-            while (!Serial.available())
-                ;
-
-            String inputStr = Serial.readStringUntil('\n');
-            inputStr.trim();
-
-            if (inputStr.equalsIgnoreCase("c"))
-            {
-                Serial.println("ยกเลิกการตั้งค่าเวลา");
-                return -1;
-            }
-
-            int intValue = inputStr.toInt();
-            Serial.println(intValue);
-
-            if (intValue >= minVal && intValue <= maxVal)
-            {
-                return intValue;
-            }
-            else
-            {
-                Serial.print("Error: ค่าไม่ถูกต้อง ในช่วง ");
-                Serial.print(minVal);
-                Serial.print(" - ");
-                Serial.println(maxVal);
-            }
-        }
-    };
-
-    Serial.println("\nตั้งเวลา RTC");
-    hour = getInput("ใส่ชั่วโมง (0-23): ", 0, 23);
-    if (hour == -1)
-        return;
-    minute = getInput("ใส่นาที (0-59): ", 0, 59);
-    if (minute == -1)
-        return;
-    second = getInput("ใส่วินาที (0-59): ", 0, 59);
-    if (second == -1)
-        return;
-
-    rtc.setHour(hour);
-    rtc.setMinute(minute);
-    rtc.setSecond(second);
-    Serial.println("อัปเดตเวลา RTC สำเร็จแล้ว");
-    Serial.print("ตั้งเวลาใหม่: ");
-    Serial.print(hour);
-    Serial.print(":");
-    Serial.print(minute);
-    Serial.print(":");
-    Serial.println(second);
-    Serial.println("------------------------------");
-}
-
-void handleMelody()
-{
-    static int melodyIndex = 0;
-
-    if (melodyIndex < 4)
-    {
-        int duration = 1000 / noteDurations[melodyIndex];
-        tone(buzzerPin, melody[melodyIndex], duration);
-        delay(duration * 1.30);
-        noTone(buzzerPin);
-        melodyIndex++;
-    }
-    else
-    {
-        melodyIndex = 0;
-        playMelodyTask.disable();
-    }
-}
-
 void playMelodyCallback()
 {
-    if (millis() % 1000 == 0)
+    if (millis() - previousNoteTime >= 1000 / noteDurations[currentNote])
     {
-        handleMelody();
+        int duration = 1000 / noteDurations[currentNote];
+        tone(buzzerPin, melody[currentNote], duration);
+        previousNoteTime = millis();
+        currentNote++;
+        if (currentNote >= 4)
+        {
+            currentNote = 0;
+            playMelodyTask.disable();
+        }
     }
 }
