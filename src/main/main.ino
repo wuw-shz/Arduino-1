@@ -1,11 +1,18 @@
 #include <Wire.h>
 #include <DS3231.h>
 #include <Arduino.h>
+#include <TaskScheduler.h>
 
+Scheduler ts;
 DS3231 rtc;
+
+void playMelodyCallback();
+Task playMelodyTask(0, TASK_FOREVER, &playMelodyCallback);
+
 #define NOTE_C5 523
 #define NOTE_E5 659
 #define NOTE_G5 784
+
 int melody[] = {
     NOTE_C5, NOTE_E5, NOTE_G5, NOTE_C5};
 
@@ -24,6 +31,7 @@ bool isPlayingMelody = false;
 
 void setup()
 {
+    ts.addTask(playMelodyTask);
     Serial.begin(115200);
 
     resetAll();
@@ -59,42 +67,37 @@ void loop()
     // Serial.print(minute);
     // Serial.print(":");
     // Serial.println(second);
-    if (second == 0)
-    {
-        if (hour == 20 && minute == 5)
-        {
-            startCycle(0);
-        }
-        else if (hour == 14 && minute == 15)
-        {
-            startCycle(1);
-        }
-        else if (hour == 14 && minute == 30)
-        {
-            startCycle(2);
-        }
-        else if (hour == 14 && minute == 45)
-        {
-            startCycle(3);
-        }
-        else if (hour == 15 && minute == 0)
-        {
-            startCycle(4);
-        }
-        else if (hour == 15 && minute == 15)
-        {
-            startCycle(5);
-        }
-        else if (hour == 15 && minute == 30)
-        {
-            startCycle(6);
-        }
-    }
-    // if (millis() % 1000 == 0 && isAlarming)
+    // if (second == 0)
     // {
-    //     playMelody();
+    if (hour == 21 && minute == 19)
+    {
+        startCycle(0);
+    }
+    else if (hour == 14 && minute == 15)
+    {
+        startCycle(1);
+    }
+    else if (hour == 14 && minute == 30)
+    {
+        startCycle(2);
+    }
+    else if (hour == 14 && minute == 45)
+    {
+        startCycle(3);
+    }
+    else if (hour == 15 && minute == 0)
+    {
+        startCycle(4);
+    }
+    else if (hour == 15 && minute == 15)
+    {
+        startCycle(5);
+    }
+    else if (hour == 15 && minute == 30)
+    {
+        startCycle(6);
+    }
     // }
-    Serial.println(millis() - lastEventTime);
     if ((millis() - lastEventTime) >= resetTime)
     {
         resetAll();
@@ -113,10 +116,7 @@ void loop()
         isButtonPressed = false;
     }
 
-    // while (second == rtc.getSecond())
-    // {
-    //     delay(0);
-    // }
+    ts.execute();
 }
 
 void resetAll()
@@ -128,6 +128,7 @@ void resetAll()
     }
     digitalWrite(buzzerPin, LOW);
     digitalWrite(ledPins[8], LOW);
+    playMelodyTask.disable();
 }
 
 void startCycle(int cycle)
@@ -135,6 +136,8 @@ void startCycle(int cycle)
     resetAll();
     lastEventTime = millis();
     isAlarming = true;
+
+    playMelodyTask.enable();
 
     switch (cycle)
     {
@@ -254,30 +257,29 @@ void setTime()
     Serial.println("------------------------------");
 }
 
-void playMelody()
+void handleMelody()
 {
-    if (!isPlayingMelody)
-    {
-        isPlayingMelody = true;
-        currentNote = 0;
-        previousNoteTime = millis();
-        tone(buzzerPin, melody[currentNote], 1000 / noteDurations[currentNote]);
-    }
+    static int melodyIndex = 0;
 
-    unsigned long noteDuration = 1000 / noteDurations[currentNote];
-    if (millis() - previousNoteTime >= noteDuration * 1.3)
+    if (melodyIndex < 4)
     {
+        int duration = 1000 / noteDurations[melodyIndex];
+        tone(buzzerPin, melody[melodyIndex], duration);
+        delay(duration * 1.30);
         noTone(buzzerPin);
-        previousNoteTime = millis();
-        currentNote++;
+        melodyIndex++;
+    }
+    else
+    {
+        melodyIndex = 0;
+        playMelodyTask.disable();
+    }
+}
 
-        if (currentNote < 4)
-        {
-            tone(buzzerPin, melody[currentNote], 1000 / noteDurations[currentNote]);
-        }
-        else
-        {
-            isPlayingMelody = false;
-        }
+void playMelodyCallback()
+{
+    if (millis() % 1000 == 0)
+    {
+        handleMelody();
     }
 }

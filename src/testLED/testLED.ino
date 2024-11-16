@@ -13,7 +13,7 @@ int melody[] = {
 int noteDurations[] = {
     8, 8, 8, 4};
 
-void playMelody()
+void playMelodyCallback()
 {
    for (int thisNote = 0; thisNote < 4; thisNote++)
    {
@@ -26,7 +26,7 @@ void playMelody()
 
 void setup()
 {
-   playMelody();
+   playMelodyCallback();
 }
 
 void loop()
